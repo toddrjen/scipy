@@ -7,7 +7,6 @@ from warnings import warn
 from .optimize import OptimizeResult, OptimizeWarning, _check_unknown_options
 from ._linprog_util import _postsolve
 
-
 def _pivot_col(T, tol=1.0E-12, bland=False):
     """
     Given a linear programming simplex tableau, determine the column
@@ -258,18 +257,18 @@ def _solve_simplex(T, n, basis, maxiter=1000, phase=2, status=0, message='',
         The phase of the optimization being executed. In phase 1 a basic
         feasible solution is sought and the T has an additional row
         representing an alternate objective function.
-    callback : callable, optional
+    callback : callable, optional (simplex only)
         If a callback function is provided, it will be called within each
-        iteration of the algorithm. The callback must accept a
+        iteration of the simplex algorithm. The callback must require a
         `scipy.optimize.OptimizeResult` consisting of the following fields:
 
             x : 1D array
-                Current solution vector
+                The independent variable vector which optimizes the linear
+                programming problem.
             fun : float
-                Current value of the objective function
+                Value of the objective function.
             success : bool
-                True only when a phase has completed successfully. This
-                will be False for most iterations.
+                True if the algorithm succeeded in finding an optimal solution.
             slack : 1D array
                 The values of the slack variables. Each slack variable
                 corresponds to an inequality constraint. If the slack is zero,
@@ -432,39 +431,42 @@ def _linprog_simplex(c, c0, A, b, maxiter=1000, disp=False, callback=None,
     b : 1D array
         1D array of values representing the right hand side of each equality
         constraint (row) in ``A``.
-    callback : callable, optional
+    callback : callable, optional (simplex only)
         If a callback function is provided, it will be called within each
-        iteration of the algorithm. The callback function must accept a single
+        iteration of the simplex algorithm. The callback must require a
         `scipy.optimize.OptimizeResult` consisting of the following fields:
 
             x : 1D array
-                Current solution vector
+                The independent variable vector which optimizes the linear
+                programming problem.
             fun : float
-                Current value of the objective function
+                Value of the objective function.
             success : bool
-                True when an algorithm has completed successfully.
+                True if the algorithm succeeded in finding an optimal solution.
             slack : 1D array
                 The values of the slack variables. Each slack variable
                 corresponds to an inequality constraint. If the slack is zero,
                 the corresponding constraint is active.
             con : 1D array
-                The (nominally zero) residuals of the equality constraints,
-                that is, ``b - A_eq @ x``
+                The (nominally zero) residuals of the equality constraints, that
+                is, ``b - A_eq @ x``
             phase : int
-                The phase of the algorithm being executed.
+                The phase of the optimization being executed. In phase 1 a basic
+                feasible solution is sought and the T has an additional row
+                representing an alternate objective function.
             status : int
-                An integer representing the status of the optimization::
+                An integer representing the exit status of the optimization::
 
-                     0 : Algorithm proceeding nominally
+                     0 : Optimization terminated successfully
                      1 : Iteration limit reached
                      2 : Problem appears to be infeasible
                      3 : Problem appears to be unbounded
                      4 : Serious numerical difficulties encountered
+
             nit : int
                 The number of iterations performed.
             message : str
                 A string descriptor of the exit status of the optimization.
-
     Options
     -------
     maxiter : int
@@ -612,3 +614,4 @@ def _linprog_simplex(c, c0, A, b, maxiter=1000, disp=False, callback=None,
     x = solution[:m]
 
     return x, status, messages[status], int(nit2)
+
