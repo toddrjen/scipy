@@ -298,7 +298,7 @@ class Test_init_nd_shape_and_axes(object):
         assert_equal(shape_res, shape_expected)
         assert_equal(axes_res, axes_expected)
 
-    def test_np_5d_set_shape(self):
+    def test_np_5d_set_shape_nokeep(self):
         x = np.zeros([6, 2, 5, 3, 4])
         shape = [10, -1, -1, 1, 4]
         axes = None
@@ -306,12 +306,26 @@ class Test_init_nd_shape_and_axes(object):
         shape_expected = np.array([10, 2, 5, 1, 4])
         axes_expected = np.array([0, 1, 2, 3, 4])
 
-        shape_res, axes_res = _init_nd_shape_and_axes(x, shape, axes)
+        shape_res_0, axes_res_0 = _init_nd_shape_and_axes_sorted(x, shape,
+                                                                 axes)
+        shape_res_1, axes_res_1 = _init_nd_shape_and_axes_sorted(x, shape,
+                                                                 axes, False)
 
-        assert_equal(shape_res, shape_expected)
-        assert_equal(axes_res, axes_expected)
+        assert_equal(shape_res_0, shape_expected)
+        assert_equal(shape_res_1, shape_expected)
+        assert_equal(axes_res_0, axes_expected)
+        assert_equal(axes_res_1, axes_expected)
 
-        shape_res, axes_res = _init_nd_shape_and_axes_sorted(x, shape, axes)
+    def test_np_5d_set_shape_keep(self):
+        x = np.zeros([6, 2, 5, 3, 4])
+        shape = [10, -1, -1, 1, 4]
+        axes = None
+
+        shape_expected = np.array([10, -1, -1, 1, 4])
+        axes_expected = np.array([0, 1, 2, 3, 4])
+
+        shape_res, axes_res = _init_nd_shape_and_axes(x, shape,
+                                                      axes, True)
 
         assert_equal(shape_res, shape_expected)
         assert_equal(axes_res, axes_expected)
@@ -342,20 +356,7 @@ class Test_init_nd_shape_and_axes(object):
         assert_equal(shape_res, shape_expected)
         assert_equal(axes_res, axes_expected)
 
-    def test_np_5d_set_shape_axes(self):
-        x = np.zeros([6, 2, 5, 3, 4])
-        shape = [10, -1, 2]
-        axes = [1, 0, 3]
-
-        shape_expected = np.array([10, 6, 2])
-        axes_expected = np.array([1, 0, 3])
-
-        shape_res, axes_res = _init_nd_shape_and_axes(x, shape, axes)
-
-        assert_equal(shape_res, shape_expected)
-        assert_equal(axes_res, axes_expected)
-
-    def test_np_5d_set_shape_axes_sorted(self):
+    def test_np_5d_set_shape_axes_nokeep(self):
         x = np.zeros([6, 2, 5, 3, 4])
         shape = [10, -1, 2]
         axes = [1, 0, 3]
@@ -363,7 +364,57 @@ class Test_init_nd_shape_and_axes(object):
         shape_expected = np.array([6, 10, 2])
         axes_expected = np.array([0, 1, 3])
 
-        shape_res, axes_res = _init_nd_shape_and_axes_sorted(x, shape, axes)
+        shape_res_0, axes_res_0 = _init_nd_shape_and_axes_sorted(x, shape,
+                                                                 axes)
+        shape_res_1, axes_res_1 = _init_nd_shape_and_axes_sorted(x, shape,
+                                                                 axes, False)
+
+        assert_equal(shape_res_0, shape_expected)
+        assert_equal(shape_res_1, shape_expected)
+        assert_equal(axes_res_0, axes_expected)
+        assert_equal(axes_res_1, axes_expected)
+
+    def test_np_5d_set_shape_axes_keep(self):
+        x = np.zeros([6, 2, 5, 3, 4])
+        shape = [10, -1, 2]
+        axes = [1, 0, 3]
+
+        shape_expected = np.array([10, -1, 2])
+        axes_expected = np.array([1, 0, 3])
+
+        shape_res, axes_res = _init_nd_shape_and_axes(x, shape, axes, True)
+
+        assert_equal(shape_res, shape_expected)
+        assert_equal(axes_res, axes_expected)
+
+    def test_np_5d_set_shape_axes_sorted_nokeep(self):
+        x = np.zeros([6, 2, 5, 3, 4])
+        shape = [10, -1, 2]
+        axes = [1, 0, 3]
+
+        shape_expected = np.array([6, 10, 2])
+        axes_expected = np.array([0, 1, 3])
+
+        shape_res_0, axes_res_0 = _init_nd_shape_and_axes_sorted(x, shape,
+                                                                 axes)
+        shape_res_1, axes_res_1 = _init_nd_shape_and_axes_sorted(x, shape,
+                                                                 axes, False)
+
+        assert_equal(shape_res_0, shape_expected)
+        assert_equal(shape_res_1, shape_expected)
+        assert_equal(axes_res_0, axes_expected)
+        assert_equal(axes_res_1, axes_expected)
+
+    def test_np_5d_set_shape_axes_sorted_keep(self):
+        x = np.zeros([6, 2, 5, 3, 4])
+        shape = [10, -1, 2]
+        axes = [1, 0, 3]
+
+        shape_expected = np.array([-1, 10, 2])
+        axes_expected = np.array([0, 1, 3])
+
+        shape_res, axes_res = _init_nd_shape_and_axes_sorted(x, shape,
+                                                             axes, True)
 
         assert_equal(shape_res, shape_expected)
         assert_equal(axes_res, axes_expected)

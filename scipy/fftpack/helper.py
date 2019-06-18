@@ -154,7 +154,7 @@ def next_fast_len(target):
     return match
 
 
-def _init_nd_shape_and_axes(x, shape, axes):
+def _init_nd_shape_and_axes(x, shape, axes, keep_neg1=False):
     """Handle shape and axes arguments for n-dimensional transforms.
 
     Returns the shape and axes in a standard form, taking into account negative
@@ -169,12 +169,16 @@ def _init_nd_shape_and_axes(x, shape, axes):
         None, `shape` is ``x.shape``; if `shape` is None but `axes` is
         not None, then `shape` is ``scipy.take(x.shape, axes, axis=0)``.
         If `shape` is -1, the size of the corresponding dimension of `x` is
-        used.
+        used if `keep_neg` is `False`, otherwise it is kept as-is.
     axes : int or array_like of ints or None
         Axes along which the calculation is computed.
         The default is over all axes.
         Negative indices are automatically converted to their positive
         counterpart.
+    keep_neg1 : bool, optional
+        If `False` (default), `shape` values of `-1` are converted to
+        ``scipy.take(x.shape, axes, axis=0)``.
+        If `True`, they are kept as `-1`.
 
     Returns
     -------
@@ -188,10 +192,10 @@ def _init_nd_shape_and_axes(x, shape, axes):
     noshape = shape is None
     noaxes = axes is None
 
-    if noaxes:
-        axes = arange(x.ndim, dtype=intc)
-    else:
+    if not noaxes:
         axes = atleast_1d(axes)
+    else:
+        axes = arange(x.ndim, dtype=intc)
 
     if axes.size == 0:
         axes = axes.astype(intc)
@@ -226,18 +230,20 @@ def _init_nd_shape_and_axes(x, shape, axes):
         raise ValueError("when given, shape values must be integers")
     if axes.shape != shape.shape:
         raise ValueError("when given, axes and shape arguments"
-                         " have to be of the same length")
+                         " have to be of the same length:"
+                         " {0} != {1}".format(axes.shape, shape.shape))
 
-    shape = where(shape == -1, array(x.shape)[axes], shape)
+    if not keep_neg1:
+        shape = where(shape == -1, array(x.shape)[axes], shape)
 
-    if shape.size != 0 and (shape < 1).any():
+    if shape.size != 0 and ((shape < -1) | (shape == 0)).any():
         raise ValueError(
             "invalid number of data points ({0}) specified".format(shape))
 
     return shape, axes
 
 
-def _init_nd_shape_and_axes_sorted(x, shape, axes):
+def _init_nd_shape_and_axes_sorted(x, shape, axes, keep_neg1=False):
     """Handle and sort shape and axes arguments for n-dimensional transforms.
 
     This is identical to `_init_nd_shape_and_axes`, except the axes are
@@ -252,12 +258,16 @@ def _init_nd_shape_and_axes_sorted(x, shape, axes):
         None, `shape` is ``x.shape``; if `shape` is None but `axes` is
         not None, then `shape` is ``scipy.take(x.shape, axes, axis=0)``.
         If `shape` is -1, the size of the corresponding dimension of `x` is
-        used.
+        used if `keep_neg` is `False`, otherwise it is kept as-is.
     axes : int or array_like of ints or None
         Axes along which the calculation is computed.
         The default is over all axes.
         Negative indices are automatically converted to their positive
         counterpart.
+    keep_neg1 : bool, optional
+        If `False` (default), `shape` values of `-1` are converted to
+        ``scipy.take(x.shape, axes, axis=0)``.
+        If `True`, they are kept as `-1`.
 
     Returns
     -------
@@ -268,10 +278,11 @@ def _init_nd_shape_and_axes_sorted(x, shape, axes):
 
     """
     noaxes = axes is None
-    shape, axes = _init_nd_shape_and_axes(x, shape, axes)
+    shape, axes = _init_nd_shape_and_axes(x, shape, axes, keep_neg1=keep_neg1)
 
     if not noaxes:
-        shape = shape[axes.argsort()]
-        axes.sort()
+        shapesort = axes.argsort()
+        shape = shape[shapesort]
+        axes = axes[shapesort]
 
     return shape, axes

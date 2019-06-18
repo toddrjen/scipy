@@ -279,7 +279,7 @@ def _centered(arr, newshape):
     return arr[tuple(myslice)]
 
 
-def fftconvolve(in1, in2, mode="full", axes=None):
+def fftconvolve(in1, in2, mode="full", axes=None, fshape=None):
     """Convolve two N-dimensional arrays using FFT.
 
     Convolve `in1` and `in2` using the fast Fourier transform method, with
@@ -315,7 +315,12 @@ def fftconvolve(in1, in2, mode="full", axes=None):
     axes : int or array_like of ints or None, optional
         Axes over which to compute the convolution.
         The default is over all axes.
-
+    fshape : int or array_like of ints or None, optional
+        The number of samples to use for the FFT along the dimesions
+        specified by `axes`. If `axes` is not specified, all axes.
+        `fshape[dim]` must be greater than or equal to
+        `in1.shape[dim]+in2.shape[dim]-1`.
+        By default, the next size that can be quickly calculated is used.
 
     Returns
     -------
@@ -367,6 +372,7 @@ def fftconvolve(in1, in2, mode="full", axes=None):
     in1 = asarray(in1)
     in2 = asarray(in2)
     noaxes = axes is None
+    nofshape = fshape is None
 
     if in1.ndim == in2.ndim == 0:  # scalar inputs
         return in1 * in2
@@ -375,10 +381,13 @@ def fftconvolve(in1, in2, mode="full", axes=None):
     elif in1.size == 0 or in2.size == 0:  # empty arrays
         return array([])
 
-    _, axes = _init_nd_shape_and_axes_sorted(in1, shape=None, axes=axes)
+    fshape, axes = _init_nd_shape_and_axes_sorted(in1, shape=fshape, axes=axes,
+                                                  keep_neg1=True)
 
     if not noaxes and not axes.size:
         raise ValueError("when provided, axes cannot be empty")
+    if not nofshape and not fshape.size:
+        raise ValueError("when provided, fshape cannot be empty")
 
     if noaxes:
         other_axes = array([], dtype=np.intc)
@@ -404,7 +413,16 @@ def fftconvolve(in1, in2, mode="full", axes=None):
         in1, s1, in2, s2 = in2, s2, in1, s1
 
     # Speed up FFT by padding to optimal size for FFTPACK
-    fshape = [fftpack.helper.next_fast_len(d) for d in shape[axes]]
+    if nofshape:
+        fshape = np.full(axes.shape, -1)
+
+    fshape[fshape == -1] = [fftpack.helper.next_fast_len(d) for d in
+                            shape[axes][fshape == -1]]
+
+    if not nofshape and np.any(fshape < shape[axes]):
+        raise ValueError("fshape {0} must be at least as large as the"
+                         " convolved size {1}".format(fshape, shape[axes]))
+
     fslice = tuple([slice(sz) for sz in shape])
     # Pre-1.9 NumPy FFT routines are not threadsafe.  For older NumPys, make
     # sure we only call rfftn/irfftn from one thread at a time.
