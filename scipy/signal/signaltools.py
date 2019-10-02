@@ -83,15 +83,14 @@ def _inputs_swap_needed(mode, shape1, shape2, axes=None):
     if mode != 'valid':
         return False
 
-    ok1, ok2 = True, True
+    if not shape1:
+        return False
 
-    for i, (d1, d2) in enumerate(zip(shape1, shape2)):
-        if axes is not None and i not in axes:
-            continue
-        if not d1 >= d2:
-            ok1 = False
-        if not d2 >= d1:
-            ok2 = False
+    if axes is None:
+        axes = range(len(shape1))
+
+    ok1 = all(shape1[i] >= shape2[i] for i in axes)
+    ok2 = all(shape2[i] >= shape1[i] for i in axes)
 
     if not (ok1 or ok2):
         raise ValueError("For 'valid' mode, one must be at least "
