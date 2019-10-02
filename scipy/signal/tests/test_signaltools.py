@@ -768,16 +768,36 @@ def fftconvolve_err(*args, **kwargs):
     raise RuntimeError('Fell back to fftconvolve')
 
 
+def gen_oa_shapes(sizes):
+    return [(a, b) for a, b in product(sizes, repeat=2)
+            if abs(a - b) > 3]
+
+
+def gen_oa_shapes_2d(sizes):
+    shapes0 = gen_oa_shapes(sizes)
+    shapes1 = gen_oa_shapes(sizes)
+    shapes = [ishapes0+ishapes1 for ishapes0, ishapes1 in
+              zip(shapes0, shapes1)]
+
+    modes = ['full', 'valid', 'same']
+    return [ishapes+(imode,) for ishapes, imode in product(shapes, modes)
+            if imode != 'valid' or
+            (ishapes[0] > ishapes[1] and ishapes[2] > ishapes[3]) or
+            (ishapes[0] < ishapes[1] and ishapes[2] < ishapes[3])]
+
+
+def gen_oa_shapes_eq(sizes):
+    return [(a, b) for a, b in product(sizes, repeat=2)
+            if a >= b]
+
+
 class TestOAConvolve(object):
     @pytest.mark.slow()
-    @pytest.mark.parametrize('shape_a_0', list(range(100)) +
-                             list(range(100, 1000, 23)))
-    @pytest.mark.parametrize('shape_b_0', list(range(100)) +
-                             list(range(100, 1000, 23)))
+    @pytest.mark.parametrize('shape_a_0, shape_b_0',
+                             gen_oa_shapes_eq(list(range(100)) +
+                                              list(range(100, 1000, 23)))
+                             )
     def test_real_manylens(self, shape_a_0, shape_b_0):
-        if shape_a_0 <= shape_b_0:
-            return
-
         a = np.random.rand(shape_a_0)
         b = np.random.rand(shape_b_0)
 
@@ -786,761 +806,105 @@ class TestOAConvolve(object):
 
         assert_array_almost_equal(out, expected)
 
-    @pytest.mark.parametrize('shape_a_0', [50, 49, 6, 4])
-    @pytest.mark.parametrize('shape_b_0', [50, 49, 6, 4])
-    def test_real_noaxes(self, shape_a_0, shape_b_0, monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
+    @pytest.mark.parametrize('shape_a_0, shape_b_0',
+                             gen_oa_shapes([50, 47, 6, 4]))
+    @pytest.mark.parametrize('is_complex', [True, False])
+    @pytest.mark.parametrize('mode', ['full', 'valid', 'same'])
+    def test_1d_noaxes(self, shape_a_0, shape_b_0,
+                       is_complex, mode, monkeypatch):
         a = np.random.rand(shape_a_0)
         b = np.random.rand(shape_b_0)
+        if is_complex:
+            a = a + 1j*np.random.rand(shape_a_0)
+            b = b + 1j*np.random.rand(shape_b_0)
 
-        expected = fftconvolve(a, b)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [None, 0, [0], -1, [-1]])
-    @pytest.mark.parametrize('shape_a_0', [50, 49, 6, 4])
-    @pytest.mark.parametrize('shape_b_0', [50, 49, 6, 4])
-    def test_real(self, axes, shape_a_0, shape_b_0, monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_0)
-        b = np.random.rand(shape_b_0)
-
-        expected = fftconvolve(a, b, axes=axes)
+        expected = fftconvolve(a, b, mode=mode)
 
         monkeypatch.setattr(signal.signaltools, 'fftconvolve',
                             fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
+        out = oaconvolve(a, b, mode=mode)
 
         assert_array_almost_equal(out, expected)
 
-    @pytest.mark.parametrize('axes', [0, [0], -2, [-2]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 6, 4])
+    @pytest.mark.parametrize('axes', [0, 1])
+    @pytest.mark.parametrize('shape_a_0, shape_b_0',
+                             gen_oa_shapes([50, 47, 6, 4]))
     @pytest.mark.parametrize('shape_a_extra', [1, 3])
     @pytest.mark.parametrize('shape_b_extra', [1, 3])
-    def test_real_axes0(self, axes, shape_a_0, shape_b_0,
-                        shape_a_extra, shape_b_extra,
-                        monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
+    @pytest.mark.parametrize('is_complex', [True, False])
+    @pytest.mark.parametrize('mode', ['full', 'valid', 'same'])
+    def test_1d_axes(self, axes, shape_a_0, shape_b_0,
+                     shape_a_extra, shape_b_extra,
+                     is_complex, mode, monkeypatch):
+        ax_a = [shape_a_extra]*2
+        ax_b = [shape_b_extra]*2
+        ax_a[axes] = shape_a_0
+        ax_b[axes] = shape_b_0
 
-        a = np.random.rand(shape_a_0, shape_a_extra)
-        b = np.random.rand(shape_b_0, shape_b_extra)
+        a = np.random.rand(*ax_a)
+        b = np.random.rand(*ax_b)
+        if is_complex:
+            a = a + 1j*np.random.rand(*ax_a)
+            b = b + 1j*np.random.rand(*ax_b)
 
-        expected = fftconvolve(a, b, axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [1, [1], -1, [-1]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_a_extra', [1, 3])
-    @pytest.mark.parametrize('shape_b_extra', [1, 3])
-    def test_real_axes1(self, axes, shape_a_0, shape_b_0,
-                        shape_a_extra, shape_b_extra,
-                        monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_extra, shape_a_0)
-        b = np.random.rand(shape_b_extra, shape_b_0)
-
-        expected = fftconvolve(a, b, axes=axes)
+        expected = fftconvolve(a, b, mode=mode, axes=axes)
 
         monkeypatch.setattr(signal.signaltools, 'fftconvolve',
                             fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
+        out = oaconvolve(a, b, mode=mode, axes=axes)
 
         assert_array_almost_equal(out, expected)
 
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 6, 4])
-    def test_complex_noaxes(self, shape_a_0, shape_b_0, monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_0) + 1j*np.random.rand(shape_a_0)
-        b = np.random.rand(shape_b_0) + 1j*np.random.rand(shape_b_0)
-
-        expected = fftconvolve(a, b)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [None, 0, [0], -1, [-1]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 6, 4])
-    def test_complex(self, axes, shape_a_0, shape_b_0, monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_0) + 1j*np.random.rand(shape_a_0)
-        b = np.random.rand(shape_b_0) + 1j*np.random.rand(shape_b_0)
-
-        expected = fftconvolve(a, b, axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [0, [0], -2, [-2]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_a_extra', [1, 3])
-    @pytest.mark.parametrize('shape_b_extra', [1, 3])
-    def test_complex_axes0(self, axes, shape_a_0, shape_b_0,
-                           shape_a_extra, shape_b_extra,
-                           monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_0, shape_a_extra) + \
-            1j*np.random.rand(shape_a_0, shape_a_extra)
-        b = np.random.rand(shape_b_0, shape_b_extra) + \
-            1j*np.random.rand(shape_b_0, shape_b_extra)
-
-        expected = fftconvolve(a, b, axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [1, [1], -1, [-1]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_a_extra', [1, 3])
-    @pytest.mark.parametrize('shape_b_extra', [1, 3])
-    def test_complex_axes1(self, axes, shape_a_0, shape_b_0,
-                           shape_a_extra, shape_b_extra,
-                           monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_extra, shape_a_0) + \
-            1j*np.random.rand(shape_a_extra, shape_a_0)
-        b = np.random.rand(shape_b_extra, shape_b_0) + \
-            1j*np.random.rand(shape_b_extra, shape_b_0)
-
-        expected = fftconvolve(a, b, axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_a_1', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_b_1', [100, 99, 6, 4])
-    def test_2d_real_same_noaxes(self, shape_a_0, shape_b_0,
-                                 shape_a_1, shape_b_1,
-                                 monkeypatch):
-        if shape_a_0 == shape_b_0 and shape_a_1 == shape_b_1:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2 and abs(shape_a_1-shape_b_1) <= 2:
-            return
-
+    @pytest.mark.parametrize('shape_a_0, shape_b_0, '
+                             'shape_a_1, shape_b_1, mode',
+                             gen_oa_shapes_2d([50, 47, 6, 4]))
+    @pytest.mark.parametrize('is_complex', [True, False])
+    def test_2d_noaxes(self, shape_a_0, shape_b_0,
+                       shape_a_1, shape_b_1, mode,
+                       is_complex, monkeypatch):
         a = np.random.rand(shape_a_0, shape_a_1)
         b = np.random.rand(shape_b_0, shape_b_1)
+        if is_complex:
+            a = a + 1j*np.random.rand(shape_a_0, shape_a_1)
+            b = b + 1j*np.random.rand(shape_b_0, shape_b_1)
 
-        expected = fftconvolve(a, b)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b)
-
-        assert_array_almost_equal(out, expected)
-
-    def test_2d_real_same_axes_non_noaxese(self, monkeypatch):
-        shape_a_0 = 6
-        shape_b_0 = 99
-        shape_a_1 = 100
-        shape_b_1 = 4
-
-        a = np.random.rand(shape_a_0, shape_a_1)
-        b = np.random.rand(shape_b_0, shape_b_1)
-
-        expected = fftconvolve(a, b)
+        expected = fftconvolve(a, b, mode=mode)
 
         monkeypatch.setattr(signal.signaltools, 'fftconvolve',
                             fftconvolve_err)
-        out = oaconvolve(a, b)
+        out = oaconvolve(a, b, mode=mode)
 
         assert_array_almost_equal(out, expected)
 
-    @pytest.mark.parametrize('axes', [None,
-                                      [0, 1],
-                                      [1, 0],
-                                      [0, -1],
-                                      [-1, 0],
-                                      [-2, 1],
-                                      [1, -2],
-                                      [-2, -1],
-                                      [-1, -2]
-                                      ])
-    def test_2d_real_same_axes_none(self, axes, monkeypatch):
-        shape_a_0 = 6
-        shape_b_0 = 99
-        shape_a_1 = 100
-        shape_b_1 = 4
-
-        a = np.random.rand(shape_a_0, shape_a_1)
-        b = np.random.rand(shape_b_0, shape_b_1)
-
-        expected = fftconvolve(a, b, axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [[0, 1],
-                                      [1, 0],
-                                      [0, -2],
-                                      [-2, 0],
-                                      [-3, 1],
-                                      [1, -3],
-                                      [-3, -2],
-                                      [-2, -3]])
-    def test_2d_real_same_axes01(self, axes, monkeypatch):
-        shape_a_0 = 6
-        shape_b_0 = 99
-        shape_a_1 = 100
-        shape_b_1 = 4
-
-        shape_a_extra = 3
-        shape_b_extra = 1
-
-        a = np.random.rand(shape_a_0, shape_a_1, shape_a_extra)
-        b = np.random.rand(shape_b_0, shape_b_1, shape_b_extra)
-
-        expected = fftconvolve(a, b, axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [[0, 2],
-                                      [2, 0],
-                                      [0, -1],
-                                      [-1, 0],
-                                      [-3, 2],
-                                      [2, -3],
-                                      [-3, -1],
-                                      [-1, -3]])
-    def test_2d_real_same_axes02(self, axes, monkeypatch):
-        shape_a_0 = 100
-        shape_b_0 = 6
-        shape_a_1 = 100
-        shape_b_1 = 4
-
-        shape_a_extra = 1
-        shape_b_extra = 3
-
-        a = np.random.rand(shape_a_0, shape_a_extra, shape_a_1)
-        b = np.random.rand(shape_b_0, shape_b_extra, shape_b_1)
-
-        expected = fftconvolve(a, b, axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [[1, 2],
-                                      [2, 1],
-                                      [1, -1],
-                                      [-1, 1],
-                                      [-2, 2],
-                                      [2, -2],
-                                      [-2, -1],
-                                      [-1, -2]])
-    def test_2d_real_same_axes12(self, axes, monkeypatch):
-        shape_a_0 = 100
-        shape_b_0 = 99
-        shape_a_1 = 100
-        shape_b_1 = 4
-
-        shape_a_extra = 3
-        shape_b_extra = 3
-
-        a = np.random.rand(shape_a_extra, shape_a_0, shape_a_1)
-        b = np.random.rand(shape_b_extra, shape_b_0, shape_b_1)
-
-        expected = fftconvolve(a, b, axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_a_1', [100, 99, 6, 4])
-    @pytest.mark.parametrize('shape_b_1', [100, 99, 6, 4])
-    def test_2d_complex_same_noaxes(self, shape_a_0, shape_b_0,
-                                    shape_a_1, shape_b_1,
-                                    monkeypatch):
-        if shape_a_0 == shape_b_0 and shape_a_1 == shape_b_1:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2 and abs(shape_a_1-shape_b_1) <= 2:
-            return
-
-        a = np.random.rand(shape_a_0, shape_a_1) + \
-            1j*np.random.rand(shape_a_0, shape_a_1)
-        b = np.random.rand(shape_b_0, shape_b_1) + \
-            1j*np.random.rand(shape_b_0, shape_b_1)
-
-        expected = fftconvolve(a, b)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b)
-
-        assert_array_almost_equal(out, expected)
-
-    def test_2d_complex_same_axes_none_noaxes(self, monkeypatch):
-        shape_a_0 = 100
-        shape_b_0 = 6
-        shape_a_1 = 100
-        shape_b_1 = 100
-
-        a = np.random.rand(shape_a_0, shape_a_1) + \
-            1j*np.random.rand(shape_a_0, shape_a_1)
-        b = np.random.rand(shape_b_0, shape_b_1) + \
-            1j*np.random.rand(shape_b_0, shape_b_1)
-
-        expected = fftconvolve(a, b)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [None,
-                                      [0, 1],
-                                      [1, 0],
-                                      [0, -1],
-                                      [-1, 0],
-                                      [-2, 1],
-                                      [1, -2],
-                                      [-2, -1],
-                                      [-1, -2]])
-    def test_2d_complex_same_axes_none(self, axes, monkeypatch):
-        shape_a_0 = 100
-        shape_b_0 = 6
-        shape_a_1 = 100
-        shape_b_1 = 100
-
-        a = np.random.rand(shape_a_0, shape_a_1) + \
-            1j*np.random.rand(shape_a_0, shape_a_1)
-        b = np.random.rand(shape_b_0, shape_b_1) + \
-            1j*np.random.rand(shape_b_0, shape_b_1)
-
-        expected = fftconvolve(a, b, axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [[0, 1],
-                                      [1, 0],
-                                      [0, -2],
-                                      [-2, 0],
-                                      [-3, 1],
-                                      [1, -3],
-                                      [-3, -2],
-                                      [-2, -3]])
-    def test_2d_complex_same_axes_01(self, axes, monkeypatch):
-        shape_a_0 = 50
-        shape_b_0 = 6
-        shape_a_1 = 100
-        shape_b_1 = 100
-
-        shape_a_extra = 1
-        shape_b_extra = 2
-
-        a = np.random.rand(shape_a_0, shape_a_1, shape_a_extra) + \
-            1j*np.random.rand(shape_a_0, shape_a_1, shape_a_extra)
-        b = np.random.rand(shape_b_0, shape_b_1, shape_b_extra) + \
-            1j*np.random.rand(shape_b_0, shape_b_1, shape_b_extra)
-
-        expected = fftconvolve(a, b, axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [[0, 2],
-                                      [2, 0],
-                                      [0, -1],
-                                      [-1, 0],
-                                      [-3, 2],
-                                      [2, -3],
-                                      [-3, -1],
-                                      [-1, -3]])
-    def test_2d_complex_same_axes_02(self, axes, monkeypatch):
-        shape_a_0 = 50
-        shape_b_0 = 100
-        shape_a_1 = 100
-        shape_b_1 = 7
-
-        shape_a_extra = 4
-        shape_b_extra = 4
-
-        a = np.random.rand(shape_a_0, shape_a_extra, shape_a_1) + \
-            1j*np.random.rand(shape_a_0, shape_a_extra, shape_a_1)
-        b = np.random.rand(shape_b_0, shape_b_extra, shape_b_1) + \
-            1j*np.random.rand(shape_b_0, shape_b_extra, shape_b_1)
-
-        expected = fftconvolve(a, b, axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [[1, 2],
-                                      [2, 1],
-                                      [1, -1],
-                                      [-1, 1],
-                                      [-2, 2],
-                                      [2, -2],
-                                      [-2, -1],
-                                      [-1, -2]])
-    def test_2d_complex_same_axes_12(self, axes, monkeypatch):
-        shape_a_0 = 70
-        shape_b_0 = 2
-        shape_a_1 = 99
-        shape_b_1 = 100
-
-        shape_a_extra = 4
-        shape_b_extra = 4
-
-        a = np.random.rand(shape_a_extra, shape_a_0, shape_a_1) + \
-            1j*np.random.rand(shape_a_extra, shape_a_0, shape_a_1)
-        b = np.random.rand(shape_b_extra, shape_b_0, shape_b_1) + \
-            1j*np.random.rand(shape_b_extra, shape_b_0, shape_b_1)
-
-        expected = fftconvolve(a, b, axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 4])
-    def test_real_same_mode_noaxes(self, shape_a_0, shape_b_0, monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_0)
-        b = np.random.rand(shape_b_0)
-
-        expected = fftconvolve(a, b, 'same')
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, 'same')
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [None, 0, [0], -1, [-1]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 4])
-    def test_real_same_mode(self, axes, shape_a_0, shape_b_0, monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_0)
-        b = np.random.rand(shape_b_0)
-
-        expected = fftconvolve(a, b, 'same', axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, 'same', axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [0, [0], -2, [-2]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 4])
+    @pytest.mark.parametrize('axes', [[0, 1], [0, 2], [1, 2]])
+    @pytest.mark.parametrize('shape_a_0, shape_b_0, '
+                             'shape_a_1, shape_b_1, mode',
+                             gen_oa_shapes_2d([50, 47, 6, 4]))
     @pytest.mark.parametrize('shape_a_extra', [1, 3])
     @pytest.mark.parametrize('shape_b_extra', [1, 3])
-    def test_real_same_mode_axes0(self, axes, shape_a_0, shape_b_0,
-                                  shape_a_extra, shape_b_extra,
-                                  monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
+    @pytest.mark.parametrize('is_complex', [True, False])
+    def test_2d_axes(self, axes, shape_a_0, shape_b_0,
+                     shape_a_1, shape_b_1, mode,
+                     shape_a_extra, shape_b_extra,
+                     is_complex, monkeypatch):
+        ax_a = [shape_a_extra]*3
+        ax_b = [shape_b_extra]*3
+        ax_a[axes[0]] = shape_a_0
+        ax_b[axes[0]] = shape_b_0
+        ax_a[axes[1]] = shape_a_1
+        ax_b[axes[1]] = shape_b_1
 
-        a = np.random.rand(shape_a_0, shape_a_extra)
-        b = np.random.rand(shape_b_0, shape_b_extra)
+        a = np.random.rand(*ax_a)
+        b = np.random.rand(*ax_b)
+        if is_complex:
+            a = a + 1j*np.random.rand(*ax_a)
+            b = b + 1j*np.random.rand(*ax_b)
 
-        expected = fftconvolve(a, b, 'same', axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, 'same', axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [1, [1], -1, [-1]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_a_extra', [1, 3])
-    @pytest.mark.parametrize('shape_b_extra', [1, 3])
-    def test_real_same_mode_axes1(self, axes, shape_a_0, shape_b_0,
-                                  shape_a_extra, shape_b_extra,
-                                  monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_extra, shape_a_0)
-        b = np.random.rand(shape_b_extra, shape_b_0)
-
-        expected = fftconvolve(a, b, 'same', axes=axes)
+        expected = fftconvolve(a, b, mode=mode, axes=axes)
 
         monkeypatch.setattr(signal.signaltools, 'fftconvolve',
                             fftconvolve_err)
-        out = oaconvolve(a, b, 'same', axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 4])
-    def test_real_valid_mode_noaxes(self, shape_a_0, shape_b_0, monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_0)
-        b = np.random.rand(shape_b_0)
-
-        expected = fftconvolve(a, b, 'valid')
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, 'valid')
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [None, 0, [0], -1, [-1]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 4])
-    def test_real_valid_mode(self, axes, shape_a_0, shape_b_0, monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_0)
-        b = np.random.rand(shape_b_0)
-
-        expected = fftconvolve(a, b, 'valid', axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, 'valid', axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [0, [0], -2, [-2]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_a_extra', [1, 3])
-    @pytest.mark.parametrize('shape_b_extra', [1, 3])
-    def test_real_valid_modeaxes0(self, axes, shape_a_0, shape_b_0,
-                                  shape_a_extra, shape_b_extra,
-                                  monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_0, shape_a_extra)
-        b = np.random.rand(shape_b_0, shape_b_extra)
-
-        expected = fftconvolve(a, b, 'valid', axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, 'valid', axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [1, [1], -1, [-1]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_a_extra', [1, 3])
-    @pytest.mark.parametrize('shape_b_extra', [1, 3])
-    def test_real_valid_mode_axes1(self, axes, shape_a_0, shape_b_0,
-                                   shape_a_extra, shape_b_extra,
-                                   monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_extra, shape_a_0)
-        b = np.random.rand(shape_b_extra, shape_b_0)
-
-        expected = fftconvolve(a, b, 'valid', axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, 'valid', axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 4])
-    def test_complex_valid_mode_noaxes(self, shape_a_0, shape_b_0,
-                                       monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_0) + 1j*np.random.rand(shape_a_0)
-        b = np.random.rand(shape_b_0) + 1j*np.random.rand(shape_b_0)
-
-        expected = fftconvolve(a, b, 'valid')
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, 'valid')
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [None, 0, [0], -1, [-1]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 4])
-    def test_complex_valid_mode(self, axes, shape_a_0, shape_b_0,
-                                monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_0) + 1j*np.random.rand(shape_a_0)
-        b = np.random.rand(shape_b_0) + 1j*np.random.rand(shape_b_0)
-
-        expected = fftconvolve(a, b, 'valid', axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, 'valid', axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [0, [0], -2, [-2]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_a_extra', [1, 3])
-    @pytest.mark.parametrize('shape_b_extra', [1, 3])
-    def test_complex_valid_mode_axes0(self, axes, shape_a_0, shape_b_0,
-                                      shape_a_extra, shape_b_extra,
-                                      monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_0, shape_a_extra) + \
-            1j*np.random.rand(shape_a_0, shape_a_extra)
-        b = np.random.rand(shape_b_0, shape_b_extra) + \
-            1j*np.random.rand(shape_b_0, shape_b_extra)
-
-        expected = fftconvolve(a, b, 'valid', axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, 'valid', axes=axes)
-
-        assert_array_almost_equal(out, expected)
-
-    @pytest.mark.parametrize('axes', [1, [1], -1, [-1]])
-    @pytest.mark.parametrize('shape_a_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_b_0', [100, 99, 4])
-    @pytest.mark.parametrize('shape_a_extra', [1, 3])
-    @pytest.mark.parametrize('shape_b_extra', [1, 3])
-    def test_complex_valid_mode_axes1(self, axes, shape_a_0, shape_b_0,
-                                      shape_a_extra, shape_b_extra,
-                                      monkeypatch):
-        if shape_a_0 == shape_b_0:
-            return
-        if abs(shape_a_0-shape_b_0) <= 2:
-            return
-
-        a = np.random.rand(shape_a_extra, shape_a_0) + \
-            1j*np.random.rand(shape_a_extra, shape_a_0)
-        b = np.random.rand(shape_b_extra, shape_b_0) + \
-            1j*np.random.rand(shape_b_extra, shape_b_0)
-
-        expected = fftconvolve(a, b, 'valid', axes=axes)
-
-        monkeypatch.setattr(signal.signaltools, 'fftconvolve',
-                            fftconvolve_err)
-        out = oaconvolve(a, b, 'valid', axes=axes)
+        out = oaconvolve(a, b, mode=mode, axes=axes)
 
         assert_array_almost_equal(out, expected)
 
