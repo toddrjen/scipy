@@ -795,17 +795,24 @@ def oaconvolve(in1, in2, mode="full", axes=None):
     ret = _freq_domain_conv(in1, in2, fft_axes, fft_shape, calc_fast_len=False)
 
     # Do the overlap-add.
-    for ax, ax_fft, ax_split in zip(axes, fft_axes, split_axes):
-        overlap = overlaps[ax]
-        if overlap is None:
-            continue
+    for ax, ax_fft, ax1_split, ax2_split in zip(axes, fft_axes, split_1_axes, split_2_axes):
+        overlap1 = overlaps1[ax]
+        overlap2 = overlaps2[ax]
+        if overlap1 is not None:
+            ret, overpart = np.split(ret, [-overlap1], ax_fft)
+            overpart = np.split(overpart, [-1], ax1_split)[0]
 
-        ret, overpart = np.split(ret, [-overlap], ax_fft)
-        overpart = np.split(overpart, [-1], ax_split)[0]
+            ret_overpart = np.split(ret, [overlap1], ax_fft)[0]
+            ret_overpart = np.split(ret_overpart, [1], ax1_split)[1]
+            ret_overpart += overpart
 
-        ret_overpart = np.split(ret, [overlap], ax_fft)[0]
-        ret_overpart = np.split(ret_overpart, [1], ax_split)[1]
-        ret_overpart += overpart
+        if overlap2 is not None:
+            ret, overpart = np.split(ret, [-overlap2], ax_fft)
+            overpart = np.split(overpart, [-1], ax2_split)[0]
+
+            ret_overpart = np.split(ret, [overlap2], ax_fft)[0]
+            ret_overpart = np.split(ret_overpart, [1], ax2_split)[1]
+            ret_overpart += overpart
 
     # Reshape back to the correct dimensionality.
     shape_ret = [ret.shape[i] if i not in fft_axes else
